@@ -44,11 +44,11 @@ def get_data(csv_path: str) -> pd.DataFrame:
 
 
 st.set_page_config(
-    page_title="Credit Card Fraud Analytics",
+    page_title="Credit Card Fraud Analytics 2",
     page_icon="💳",
     layout="wide",
 )
-st.title("Credit Card Fraud Analytics")
+st.title("Credit Card Fraud Analytics 2")
 st.caption(
     "Explore transaction activity, fraud patterns, merchant geography, "
     "and customer credit scores."
