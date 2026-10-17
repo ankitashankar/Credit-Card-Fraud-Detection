@@ -22,10 +22,10 @@ kubectl get deployments,services,hpa
 
 ## GitHub Actions deployment
 
-The workflow in `.github/workflows/main.yml` runs tests and publishes the image
-to GHCR on pushes to `main`. Its deploy job targets a Windows self-hosted GitHub
-Actions runner on the machine running Docker Desktop, because GitHub-hosted
-runners cannot access a local Kubernetes cluster.
+The workflow in `.github/workflows/main.yml` runs tests on GitHub-hosted Ubuntu,
+then builds and publishes the image to GHCR and deploys it using a Windows
+self-hosted GitHub Actions runner on the machine running Docker Desktop.
+GitHub-hosted runners cannot access a local Kubernetes cluster.
 
 To enable that job:
 

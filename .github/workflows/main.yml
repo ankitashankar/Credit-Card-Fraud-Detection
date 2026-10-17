@@ -32,7 +32,7 @@ jobs:
   build:
     name: Build and push image
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, windows]
     permissions:
       contents: read
       packages: write
@@ -44,8 +44,14 @@ jobs:
 
       - name: Set image name
         id: image
-        shell: bash
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        shell: powershell
+        run: |
+          $imageName = "ghcr.io/$($env:GITHUB_REPOSITORY.ToLowerInvariant())"
+          [System.IO.File]::AppendAllText(
+            $env:GITHUB_OUTPUT,
+            "name=$imageName`n",
+            [System.Text.UTF8Encoding]::new($false)
+          )
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -77,13 +83,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Select Docker Desktop Kubernetes context
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl config use-context docker-desktop
           if ($LASTEXITCODE -ne 0) { throw "Could not select the docker-desktop Kubernetes context." }
 
       - name: Configure GHCR image pull secret
-        shell: pwsh
+        shell: powershell
         env:
           GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
           GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
@@ -99,13 +105,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Could not configure the GHCR pull secret." }
 
       - name: Apply Kubernetes manifests
-        shell: pwsh
+        shell: powershell
         run: |
           kubectl apply -f k8s/
           if ($LASTEXITCODE -ne 0) { throw "Could not apply the Kubernetes manifests." }
 
       - name: Update deployment image
-        shell: pwsh
+        shell: powershell
         env:
           IMAGE: ${{ needs.build.outputs.image }}:${{ github.sha }}
         run: |
