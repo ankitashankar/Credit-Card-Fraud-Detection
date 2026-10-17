@@ -1,0 +1,115 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        run: python -m pytest
+
+  build:
+    name: Build and push image
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.image.outputs.name }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set image name
+        id: image
+        shell: bash
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+
+  deploy:
+    name: Deploy to Docker Desktop Kubernetes
+    needs: build
+    runs-on: [self-hosted, windows]
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Select Docker Desktop Kubernetes context
+        shell: pwsh
+        run: |
+          kubectl config use-context docker-desktop
+          if ($LASTEXITCODE -ne 0) { throw "Could not select the docker-desktop Kubernetes context." }
+
+      - name: Configure GHCR image pull secret
+        shell: pwsh
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
+        run: |
+          if (-not $env:GHCR_USERNAME -or -not $env:GHCR_READ_TOKEN) {
+            throw "Set the GHCR_USERNAME and GHCR_READ_TOKEN repository secrets."
+          }
+          kubectl create secret docker-registry ghcr-pull `
+            --docker-server=ghcr.io `
+            "--docker-username=$env:GHCR_USERNAME" `
+            "--docker-password=$env:GHCR_READ_TOKEN" `
+            --dry-run=client -o yaml | kubectl apply -f -
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure the GHCR pull secret." }
+
+      - name: Apply Kubernetes manifests
+        shell: pwsh
+        run: |
+          kubectl apply -f k8s/
+          if ($LASTEXITCODE -ne 0) { throw "Could not apply the Kubernetes manifests." }
+
+      - name: Update deployment image
+        shell: pwsh
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}:${{ github.sha }}
+        run: |
+          kubectl set image deployment/credit-card-fraud-dashboard dashboard=$env:IMAGE
+          if ($LASTEXITCODE -ne 0) { throw "Could not update the dashboard image." }
+          kubectl rollout status deployment/credit-card-fraud-dashboard --timeout=180s
+          if ($LASTEXITCODE -ne 0) { throw "The dashboard deployment did not become ready." }
